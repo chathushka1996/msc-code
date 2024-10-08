@@ -1,16 +1,13 @@
-if [ ! -d "./drive/MyDrive/msc/logs" ]; then
-    mkdir ./drive/MyDrive/msc/logs
+if [ ! -d "./drive/MyDrive/msc-thesis/logs" ]; then
+    mkdir ./drive/MyDrive/msc-thesis/logs
 fi
 
-if [ ! -d "./drive/MyDrive/msc/logs/LongForecasting" ]; then
-    mkdir ./drive/MyDrive/msc/logs/LongForecasting
-fi
 seq_len=336
 model_name=PatchTST
-
-root_path_name=./data/us
+dataset=sl
+root_path_name=./data/$dataset
 data_path_name=solar.csv
-model_id_name=solar_sl
+model_id_name=solar_$datasetsl
 data_name=custom
 pred_len=96
 random_seed=2021
@@ -42,5 +39,5 @@ do
       --des 'Exp' \
       --train_epochs 20\
       --patience 20\
-      --itr 1 --batch_size 128 --learning_rate 0.0001 >drive/MyDrive/msc/logs/LongForecasting/$model_name'_'$model_id_name'_'$seq_len'_'$pred_len.log
+      --itr 1 --batch_size 128 --learning_rate 0.0001 >drive/MyDrive/msc-thesis/logs/$model_name'_'$model_id_name'_'$seq_len'_'$pred_len.log
 done
