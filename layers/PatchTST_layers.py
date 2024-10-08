@@ -59,7 +59,7 @@ class series_decomp_2(nn.Module):
     Series decomposition block
     """
     def __init__(self, kernel_size):
-        super(series_decomp, self).__init__()
+        super(series_decomp_2, self).__init__()
         self.moving_avg = moving_avg(kernel_size, stride=1)
 
     def forward(self, x):
