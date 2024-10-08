@@ -2,7 +2,7 @@ if [ ! -d "./drive/MyDrive/msc-thesis/logs" ]; then
     mkdir ./drive/MyDrive/msc-thesis/logs
 fi
 
-seq_len=336
+seq_len=96
 model_name=PatchTST
 dataset=sl
 root_path_name=./data/$dataset
