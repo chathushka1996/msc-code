@@ -1,9 +1,6 @@
 import os
-import numpy as np
 import pandas as pd
-import os
-import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 from sklearn.preprocessing import StandardScaler
 from utils.timefeatures import time_features
 import warnings
@@ -70,7 +67,7 @@ class Dataset_ETT_hour(Dataset):
             df_stamp['day'] = df_stamp.date.apply(lambda row: row.day, 1)
             df_stamp['weekday'] = df_stamp.date.apply(lambda row: row.weekday(), 1)
             df_stamp['hour'] = df_stamp.date.apply(lambda row: row.hour, 1)
-            data_stamp = df_stamp.drop(['date'], axis=1).values
+            data_stamp = df_stamp.drop(['date'], 1).values
         elif self.timeenc == 1:
             data_stamp = time_features(pd.to_datetime(df_stamp['date'].values), freq=self.freq)
             data_stamp = data_stamp.transpose(1, 0)
@@ -160,7 +157,7 @@ class Dataset_ETT_minute(Dataset):
             df_stamp['hour'] = df_stamp.date.apply(lambda row: row.hour, 1)
             df_stamp['minute'] = df_stamp.date.apply(lambda row: row.minute, 1)
             df_stamp['minute'] = df_stamp.minute.map(lambda x: x // 15)
-            data_stamp = df_stamp.drop(['date'], axis=1).values
+            data_stamp = df_stamp.drop(['date'], 1).values
         elif self.timeenc == 1:
             data_stamp = time_features(pd.to_datetime(df_stamp['date'].values), freq=self.freq)
             data_stamp = data_stamp.transpose(1, 0)
@@ -217,10 +214,58 @@ class Dataset_Custom(Dataset):
         self.root_path = root_path
         self.data_path = data_path
         self.__read_data__()
-        
+
+    # def __read_data__(self):
+    #     self.scaler = StandardScaler()
+    #     df_raw = pd.read_csv(os.path.join(self.root_path,
+    #                                       self.data_path))
+
+    #     '''
+    #     df_raw.columns: ['date', ...(other features), target feature]
+    #     '''
+    #     cols = list(df_raw.columns)
+    #     cols.remove(self.target)
+    #     cols.remove('date')
+    #     df_raw = df_raw[['date'] + cols + [self.target]]
+    #     # print(cols)
+    #     num_train = int(len(df_raw) * 0.7)
+    #     num_test = int(len(df_raw) * 0.2)
+    #     num_vali = len(df_raw) - num_train - num_test
+    #     border1s = [0, num_train - self.seq_len, len(df_raw) - num_test - self.seq_len]
+    #     border2s = [num_train, num_train + num_vali, len(df_raw)]
+    #     border1 = border1s[self.set_type]
+    #     border2 = border2s[self.set_type]
+
+    #     if self.features == 'M' or self.features == 'MS':
+    #         cols_data = df_raw.columns[1:]
+    #         df_data = df_raw[cols_data]
+    #     elif self.features == 'S':
+    #         df_data = df_raw[[self.target]]
+
+    #     if self.scale:
+    #         train_data = df_data[border1s[0]:border2s[0]]
+    #         self.scaler.fit(train_data.values)
+    #         data = self.scaler.transform(df_data.values)
+    #     else:
+    #         data = df_data.values
+
+    #     df_stamp = df_raw[['date']][border1:border2]
+    #     df_stamp['date'] = pd.to_datetime(df_stamp.date)
+    #     if self.timeenc == 0:
+    #         df_stamp['month'] = df_stamp.date.apply(lambda row: row.month, 1)
+    #         df_stamp['day'] = df_stamp.date.apply(lambda row: row.day, 1)
+    #         df_stamp['weekday'] = df_stamp.date.apply(lambda row: row.weekday(), 1)
+    #         df_stamp['hour'] = df_stamp.date.apply(lambda row: row.hour, 1)
+    #         data_stamp = df_stamp.drop(['date'], 1).values
+    #     elif self.timeenc == 1:
+    #         data_stamp = time_features(pd.to_datetime(df_stamp['date'].values), freq=self.freq)
+    #         data_stamp = data_stamp.transpose(1, 0)
+
+    #     self.data_x = data[border1:border2]
+    #     self.data_y = data[border1:border2]
+    #     self.data_stamp = data_stamp
     def __read_data__(self):
         self.scaler = StandardScaler()
-        
         # Load data based on set_type (1: train, 2: test, 3: validation)
         if self.set_type == 0:
             df_raw = pd.read_csv(os.path.join(self.root_path, "train.csv"))
@@ -228,54 +273,8 @@ class Dataset_Custom(Dataset):
             df_raw = pd.read_csv(os.path.join(self.root_path, "test.csv"))
         elif self.set_type == 1:
             df_raw = pd.read_csv(os.path.join(self.root_path, "val.csv"))
-
-        '''
-        df_raw.columns: ['date', ...(other features), target feature]
-        '''
-        # Process the columns
-        cols = list(df_raw.columns)
-        cols.remove(self.target)
-        cols.remove('date')
-        df_raw = df_raw[['date'] + cols + [self.target]]
-
-        if self.features == 'M' or self.features == 'MS':
-            cols_data = df_raw.columns[1:]
-            df_data = df_raw[cols_data]
-        elif self.features == 'S':
-            df_data = df_raw[[self.target]]
-
-        # Apply scaling if required
-        if self.scale:
-            if self.set_type == 1:  # Fit scaler only on training data
-                self.scaler.fit(df_data.values)
-            data = self.scaler.transform(df_data.values)
         else:
-            data = df_data.values
-
-        # Handle timestamps
-        df_stamp = df_raw[['date']]
-        df_stamp['date'] = pd.to_datetime(df_stamp.date)
-        
-        if self.timeenc == 0:
-            df_stamp['month'] = df_stamp.date.apply(lambda row: row.month, 1)
-            df_stamp['day'] = df_stamp.date.apply(lambda row: row.day, 1)
-            df_stamp['weekday'] = df_stamp.date.apply(lambda row: row.weekday(), 1)
-            df_stamp['hour'] = df_stamp.date.apply(lambda row: row.hour, 1)
-            data_stamp = df_stamp.drop(['date'], axis=1).values
-        elif self.timeenc == 1:
-            data_stamp = time_features(pd.to_datetime(df_stamp['date'].values), freq=self.freq)
-            data_stamp = data_stamp.transpose(1, 0)
-
-        # Assign the processed data
-        self.data_x = data
-        self.data_y = data
-        self.data_stamp = data_stamp
-
-
-    def __read_data__2(self):
-        self.scaler = StandardScaler()
-        df_raw = pd.read_csv(os.path.join(self.root_path,
-                                          self.data_path))
+            raise ValueError(f"Invalid set_type: {self.set_type}")
 
         '''
         df_raw.columns: ['date', ...(other features), target feature]
@@ -285,13 +284,13 @@ class Dataset_Custom(Dataset):
         cols.remove('date')
         df_raw = df_raw[['date'] + cols + [self.target]]
         # print(cols)
-        num_train = int(len(df_raw) * 0.7)
-        num_test = int(len(df_raw) * 0.2)
-        num_vali = len(df_raw) - num_train - num_test
-        border1s = [0, num_train - self.seq_len, len(df_raw) - num_test - self.seq_len]
-        border2s = [num_train, num_train + num_vali, len(df_raw)]
-        border1 = border1s[self.set_type]
-        border2 = border2s[self.set_type]
+        # num_train = int(len(df_raw) * 0.7)
+        # num_test = int(len(df_raw) * 0.2)
+        # num_vali = len(df_raw) - num_train - num_test
+        # border1s = [0, num_train - self.seq_len, len(df_raw) - num_test - self.seq_len]
+        # border2s = [num_train, num_train + num_vali, len(df_raw)]
+        # border1 = border1s[self.set_type]
+        # border2 = border2s[self.set_type]
 
         if self.features == 'M' or self.features == 'MS':
             cols_data = df_raw.columns[1:]
@@ -300,7 +299,9 @@ class Dataset_Custom(Dataset):
             df_data = df_raw[[self.target]]
 
         if self.scale:
-            train_data = df_data[border1s[0]:border2s[0]]
+            _train_data = pd.read_csv(os.path.join(self.root_path, "train.csv")) # df_data[border1s[0]:border2s[0]]
+            _cols_data = _train_data.columns[1:]
+            train_data = _train_data[_cols_data]
             self.scaler.fit(train_data.values)
             # print(self.scaler.mean_)
             # exit()
@@ -308,7 +309,7 @@ class Dataset_Custom(Dataset):
         else:
             data = df_data.values
 
-        df_stamp = df_raw[['date']][border1:border2]
+        df_stamp = df_raw[['date']]
         df_stamp['date'] = pd.to_datetime(df_stamp.date)
         if self.timeenc == 0:
             df_stamp['month'] = df_stamp.date.apply(lambda row: row.month, 1)
@@ -320,8 +321,8 @@ class Dataset_Custom(Dataset):
             data_stamp = time_features(pd.to_datetime(df_stamp['date'].values), freq=self.freq)
             data_stamp = data_stamp.transpose(1, 0)
 
-        self.data_x = data[border1:border2]
-        self.data_y = data[border1:border2]
+        self.data_x = data
+        self.data_y = data
         self.data_stamp = data_stamp
 
     def __getitem__(self, index):
@@ -415,7 +416,7 @@ class Dataset_Pred(Dataset):
             df_stamp['hour'] = df_stamp.date.apply(lambda row: row.hour, 1)
             df_stamp['minute'] = df_stamp.date.apply(lambda row: row.minute, 1)
             df_stamp['minute'] = df_stamp.minute.map(lambda x: x // 15)
-            data_stamp = df_stamp.drop(['date'], axis=1).values
+            data_stamp = df_stamp.drop(['date'], 1).values
         elif self.timeenc == 1:
             data_stamp = time_features(pd.to_datetime(df_stamp['date'].values), freq=self.freq)
             data_stamp = data_stamp.transpose(1, 0)
