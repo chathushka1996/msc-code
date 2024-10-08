@@ -224,9 +224,9 @@ class Dataset_Custom(Dataset):
         # Load data based on set_type (1: train, 2: test, 3: validation)
         if self.set_type == 0:
             df_raw = pd.read_csv(os.path.join(self.root_path, "train.csv"))
-        elif self.set_type == 1:
-            df_raw = pd.read_csv(os.path.join(self.root_path, "test.csv"))
         elif self.set_type == 2:
+            df_raw = pd.read_csv(os.path.join(self.root_path, "test.csv"))
+        elif self.set_type == 1:
             df_raw = pd.read_csv(os.path.join(self.root_path, "val.csv"))
 
         '''
