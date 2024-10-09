@@ -37,6 +37,6 @@ do
       --stride 8\
       --des 'Exp' \
       --train_epochs 50\
-      --patience 20\
+      --patience 5\
       --itr 1 --batch_size 128 --learning_rate 0.0001 >drive/MyDrive/msc-thesis/logs/$model_name'_'$model_id_name'_'$seq_len'_'$pred_len.log
 done
