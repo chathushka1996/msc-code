@@ -12,7 +12,7 @@ data_name=custom
 pred_len=96
 random_seed=2021
 
-for pred_len in 96 192 336 720
+for pred_len in 96 192 336 720 1820 5330 17640
 do
     python -u run_longExp.py \
       --random_seed $random_seed \
@@ -31,13 +31,12 @@ do
       --d_model 128 \
       --d_ff 256 \
       --dropout 0.2\
-      --decomposition 1\
       --fc_dropout 0.2\
       --head_dropout 0\
       --patch_len 16\
       --stride 8\
       --des 'Exp' \
-      --train_epochs 20\
+      --train_epochs 50\
       --patience 20\
       --itr 1 --batch_size 128 --learning_rate 0.0001 >drive/MyDrive/msc-thesis/logs/$model_name'_'$model_id_name'_'$seq_len'_'$pred_len.log
 done
