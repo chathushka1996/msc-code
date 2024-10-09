@@ -87,7 +87,9 @@ class Model(nn.Module):
     
     def forward(self, x):           # x: [Batch, Input length, Channel]
         if self.decomposition:
+            print("############################################################")
             print("running a decompsition")
+            print("############################################################")
             trend_init, seasonal_init, residual_init = self.decomp_module(x)
             trend_init, seasonal_init, residual_init = trend_init.permute(0, 2, 1), seasonal_init.permute(0, 2, 1), residual_init.permute(0, 2, 1)  # x: [Batch, Channel, Input length]
             trend = self.model_trend(trend_init)
