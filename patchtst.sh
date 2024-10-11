@@ -3,7 +3,7 @@ if [ ! -d "./drive/MyDrive/msc-thesis/logs" ]; then
 fi
 
 seq_len=96
-model_name=PatchTST
+model_name=DecompPatchTST
 dataset=us
 root_path_name=./data/$dataset
 data_path_name=solar.csv
@@ -13,7 +13,7 @@ pred_len=96
 random_seed=2021
 checkpoints=./drive/MyDrive/msc-thesis/models/
 
-for pred_len in 96 192 336 720 1440 2880 5760
+for pred_len in 96 #192 336 720 1440 2880 5760
 do
     python -u run_longExp.py \
       --random_seed $random_seed \
@@ -26,7 +26,6 @@ do
       --features M \
       --seq_len $seq_len \
       --pred_len $pred_len \
-      --enc_in 21 \
       --e_layers 3 \
       --n_heads 16 \
       --d_model 128 \
