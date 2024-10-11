@@ -4,7 +4,7 @@ fi
 
 seq_len=96
 model_name=DecompPatchTST
-dataset=us
+dataset=sl
 root_path_name=./data/$dataset
 data_path_name=solar.csv
 model_id_name=solar_$dataset
