@@ -7,6 +7,7 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.preprocessing import StandardScaler
 from utils.timefeatures import time_features
 import warnings
+from statsmodels.tsa.seasonal import seasonal_decompose
 
 warnings.filterwarnings('ignore')
 
@@ -217,62 +218,6 @@ class Dataset_Custom(Dataset):
         self.root_path = root_path
         self.data_path = data_path
         self.__read_data__()
-        
-    # def __read_data__(self):
-    #     self.scaler = StandardScaler()
-        
-    #     # Load data based on set_type (1: train, 2: test, 3: validation)
-    #     if self.set_type == 0:
-    #         df_raw = pd.read_csv(os.path.join(self.root_path, "train.csv"))
-    #     elif self.set_type == 2:
-    #         df_raw = pd.read_csv(os.path.join(self.root_path, "test.csv"))
-    #     elif self.set_type == 1:
-    #         df_raw = pd.read_csv(os.path.join(self.root_path, "val.csv"))
-    #     else:
-    #         raise ValueError(f"Invalid set_type: {self.set_type}")
-
-    #     '''
-    #     df_raw.columns: ['date', ...(other features), target feature]
-    #     '''
-    #     # Process the columns
-    #     cols = list(df_raw.columns)
-    #     cols.remove(self.target)
-    #     cols.remove('date')
-    #     df_raw = df_raw[['date'] + cols + [self.target]]
-
-    #     if self.features == 'M' or self.features == 'MS':
-    #         cols_data = df_raw.columns[1:]
-    #         df_data = df_raw[cols_data]
-    #     elif self.features == 'S':
-    #         df_data = df_raw[[self.target]]
-
-    #     # Apply scaling if required
-    #     if self.scale:
-    #         if self.set_type == 0:  # Fit scaler only on training data
-    #             self.scaler.fit(df_data.values)
-    #         data = self.scaler.transform(df_data.values)
-    #     else:
-    #         data = df_data.values
-
-    #     # Handle timestamps
-    #     df_stamp = df_raw[['date']]
-    #     df_stamp['date'] = pd.to_datetime(df_stamp.date)
-        
-    #     if self.timeenc == 0:
-    #         df_stamp['month'] = df_stamp.date.apply(lambda row: row.month, 1)
-    #         df_stamp['day'] = df_stamp.date.apply(lambda row: row.day, 1)
-    #         df_stamp['weekday'] = df_stamp.date.apply(lambda row: row.weekday(), 1)
-    #         df_stamp['hour'] = df_stamp.date.apply(lambda row: row.hour, 1)
-    #         data_stamp = df_stamp.drop(['date'], axis=1).values
-    #     elif self.timeenc == 1:
-    #         data_stamp = time_features(pd.to_datetime(df_stamp['date'].values), freq=self.freq)
-    #         data_stamp = data_stamp.transpose(1, 0)
-
-    #     # Assign the processed data
-    #     self.data_x = data
-    #     self.data_y = data
-    #     self.data_stamp = data_stamp
-
 
     def __read_data__(self):
         self.scaler = StandardScaler()
@@ -286,21 +231,10 @@ class Dataset_Custom(Dataset):
         else:
             raise ValueError(f"Invalid set_type: {self.set_type}")
 
-        '''
-        df_raw.columns: ['date', ...(other features), target feature]
-        '''
         cols = list(df_raw.columns)
         cols.remove(self.target)
         cols.remove('date')
         df_raw = df_raw[['date'] + cols + [self.target]]
-        # print(cols)
-        # num_train = int(len(df_raw) * 0.7)
-        # num_test = int(len(df_raw) * 0.2)
-        # num_vali = len(df_raw) - num_train - num_test
-        # border1s = [0, num_train - self.seq_len, len(df_raw) - num_test - self.seq_len]
-        # border2s = [num_train, num_train + num_vali, len(df_raw)]
-        # border1 = border1s[self.set_type]
-        # border2 = border2s[self.set_type]
 
         if self.features == 'M' or self.features == 'MS':
             cols_data = df_raw.columns[1:]
@@ -320,6 +254,124 @@ class Dataset_Custom(Dataset):
             data = df_data.values
 
         df_stamp = df_raw[['date']]
+        df_stamp['date'] = pd.to_datetime(df_stamp.date)
+        if self.timeenc == 0:
+            df_stamp['month'] = df_stamp.date.apply(lambda row: row.month, 1)
+            df_stamp['day'] = df_stamp.date.apply(lambda row: row.day, 1)
+            df_stamp['weekday'] = df_stamp.date.apply(lambda row: row.weekday(), 1)
+            df_stamp['hour'] = df_stamp.date.apply(lambda row: row.hour, 1)
+            data_stamp = df_stamp.drop(['date'], axis=1).values
+        elif self.timeenc == 1:
+            data_stamp = time_features(pd.to_datetime(df_stamp['date'].values), freq=self.freq)
+            data_stamp = data_stamp.transpose(1, 0)
+
+        self.data_x = data
+        self.data_y = data
+        self.data_stamp = data_stamp
+
+    def __getitem__(self, index):
+        s_begin = index
+        s_end = s_begin + self.seq_len
+        r_begin = s_end - self.label_len
+        r_end = r_begin + self.label_len + self.pred_len
+
+        seq_x = self.data_x[s_begin:s_end]
+        seq_y = self.data_y[r_begin:r_end]
+        seq_x_mark = self.data_stamp[s_begin:s_end]
+        seq_y_mark = self.data_stamp[r_begin:r_end]
+
+        return seq_x, seq_y, seq_x_mark, seq_y_mark
+
+    def __len__(self):
+        return len(self.data_x) - self.seq_len - self.pred_len + 1
+
+    def inverse_transform(self, data):
+        return self.scaler.inverse_transform(data)
+    
+    
+class Dataset_Custom_Dcomp(Dataset):
+    def __init__(self, root_path, flag='train', size=None,
+                 features='S', data_path='ETTh1.csv',
+                 target='OT', scale=True, timeenc=0, freq='h'):
+        # size [seq_len, label_len, pred_len]
+        # info
+        if size == None:
+            self.seq_len = 24 * 4 * 4
+            self.label_len = 24 * 4
+            self.pred_len = 24 * 4
+        else:
+            self.seq_len = size[0]
+            self.label_len = size[1]
+            self.pred_len = size[2]
+        # init
+        assert flag in ['train', 'test', 'val']
+        type_map = {'train': 0, 'val': 1, 'test': 2}
+        self.set_type = type_map[flag]
+
+        self.features = features
+        self.target = target
+        self.scale = scale
+        self.timeenc = timeenc
+        self.freq = freq
+
+        self.root_path = root_path
+        self.data_path = data_path
+        self.__read_data__()
+
+    def __read_data__(self):
+        self.scaler = StandardScaler()
+        # Load data based on set_type (1: train, 2: test, 3: validation)
+        if self.set_type == 0:
+            df_raw = pd.read_csv(os.path.join(self.root_path, "train.csv"))
+        elif self.set_type == 2:
+            df_raw = pd.read_csv(os.path.join(self.root_path, "test.csv"))
+        elif self.set_type == 1:
+            df_raw = pd.read_csv(os.path.join(self.root_path, "val.csv"))
+        else:
+            raise ValueError(f"Invalid set_type: {self.set_type}")
+
+        cols_to_decompose = list(df_raw.columns)
+        cols_to_decompose.remove(self.target)
+        cols_to_decompose.remove('date')
+        
+        decomposed_series = {}
+        for col in cols_to_decompose:  # Exclude the output column
+            decomposed = seasonal_decompose(df_raw[col], model='additive', period=12)  # Adjust period as needed
+            decomposed_series[col] = {
+                'trend': decomposed.trend,
+                'seasonal': decomposed.seasonal,
+                'residual': decomposed.resid
+            }
+        decomposed_data = pd.DataFrame()
+        for col in decomposed_series:
+            decomposed_data[col + '_trend'] = decomposed_series[col]['trend']
+            decomposed_data[col + '_seasonal'] = decomposed_series[col]['seasonal']
+            decomposed_data[col + '_residual'] = decomposed_series[col]['residual']
+        decomposed_data[self.target] = df_raw[[self.target]]
+        decomposed_data['date'] = df_raw["date"]
+        cols = list(decomposed_data.columns)
+        cols.remove(self.target)
+        cols.remove('date')
+        decomposed_data = decomposed_data[['date'] + cols + [self.target]]
+
+        if self.features == 'M' or self.features == 'MS':
+            cols_data = decomposed_data.columns[1:]
+            df_data = decomposed_data[cols_data]
+        elif self.features == 'S':
+            df_data = decomposed_data[[self.target]]
+
+        if self.scale:
+            _train_data = pd.read_csv(os.path.join(self.root_path, "train.csv")) # df_data[border1s[0]:border2s[0]]
+            _cols_data = _train_data.columns[1:]
+            train_data = _train_data[_cols_data]
+            self.scaler.fit(train_data.values)
+            # print(self.scaler.mean_)
+            # exit()
+            data = self.scaler.transform(df_data.values)
+        else:
+            data = df_data.values
+
+        df_stamp = decomposed_data[['date']]
         df_stamp['date'] = pd.to_datetime(df_stamp.date)
         if self.timeenc == 0:
             df_stamp['month'] = df_stamp.date.apply(lambda row: row.month, 1)
