@@ -361,7 +361,7 @@ class Dataset_Custom_Dcomp(Dataset):
             df_data = decomposed_data[[self.target]]
 
         if self.scale:
-            _train_data = pd.read_csv(os.path.join(self.root_path, "train.csv")) # df_data[border1s[0]:border2s[0]]
+            _train_data = decomposed_data
             _cols_data = _train_data.columns[1:]
             train_data = _train_data[_cols_data]
             self.scaler.fit(train_data.values)
