@@ -18,8 +18,6 @@ class Model(nn.Module):
                  pre_norm:bool=False, store_attn:bool=False, pe:str='zeros', learn_pe:bool=True, pretrain_head:bool=False, head_type = 'flatten', verbose:bool=False, **kwargs):
         
         super().__init__()
-        self.statistical_projection = nn.Linear(2, configs.d_model)  # Assuming 2 features (daily & yearly)
-        self.final_projection = nn.Linear(configs.d_model * 2, configs.d_model)  # Combine statistical and learned features
         
         # load parameters
         c_in = configs.enc_in
@@ -54,26 +52,41 @@ class Model(nn.Module):
             pretrain_head=pretrain_head, head_type=head_type, individual=individual, revin=revin, affine=affine,
             subtract_last=subtract_last, verbose=verbose, **kwargs)
     
-    def extract_seasonal_features(self, data, freq_daily=96, freq_yearly=35040):
+    def compute_fourier_features(self, x, freq: float, seq_len: int):
         """
-        Extract daily and yearly features using sinusoidal models.
+        Compute Fourier features for a given frequency.
         Args:
-            data (numpy array): Time series data of shape [T,]
-            freq_daily (int): Number of steps corresponding to daily frequency.
-            freq_yearly (int): Number of steps corresponding to yearly frequency.
+            x: Input tensor [Batch, Input length, Channel]
+            freq: Frequency for the Fourier component
+            seq_len: Length of the input sequence
         Returns:
-            numpy array: Array of shape [T, 2] with daily and yearly patterns.
+            Fourier features [Batch, Input length, 1]
         """
-        t = np.arange(len(data))
-        daily_pattern = np.sin(2 * np.pi * t / freq_daily)
-        yearly_pattern = np.sin(2 * np.pi * t / freq_yearly)
-        return np.column_stack((daily_pattern, yearly_pattern))
+        time = torch.arange(seq_len, device=x.device).float()
+        cos_feature = torch.cos(2 * np.pi * freq * time).unsqueeze(0).unsqueeze(-1)
+        sin_feature = torch.sin(2 * np.pi * freq * time).unsqueeze(0).unsqueeze(-1)
+        return cos_feature, sin_feature
 
 
     def forward(self, x):           # x: [Batch, Input length, Channel]
+        seq_len = x.shape[1]
+
+        # Compute Fourier features for daily and yearly patterns
+        daily_freq = 1 / (24 * 4) # Assuming hourly data
+        yearly_freq = 1 / (365 * 24 * 4)  # Assuming hourly data
+
+        daily_cos, daily_sin = self.compute_fourier_features(x, daily_freq, seq_len)
+        yearly_cos, yearly_sin = self.compute_fourier_features(x, yearly_freq, seq_len)
+
+        # Concatenate Fourier features with the input
+        fourier_features = torch.cat([daily_cos, daily_sin, yearly_cos, yearly_sin], dim=-1)
+        fourier_features = fourier_features.repeat(x.size(0), 1, 1)  # Match batch size
+
+        x = torch.cat([x, fourier_features], dim=-1)  # Augmented input
+
+        # Pass through the backbone model
         x = x.permute(0, 2, 1)  # [Batch, Channel, Input length]
-        learned_features = self.model(x)  # [Batch, Channels, Input length]
-        stats_features = self.statistical_projection(stats_features)  # [Batch, Input length, D_model]
-        combined = torch.cat((learned_features.permute(0, 2, 1), stats_features), dim=-1)
-        output = self.final_projection(combined).permute(0, 2, 1)  # [Batch, Channel, Input length]
-        return output
+        x = self.model(x)
+        x = x.permute(0, 2, 1)  # [Batch, Input length, Channel]
+
+        return x
