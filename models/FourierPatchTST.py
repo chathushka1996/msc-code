@@ -7,7 +7,7 @@ from torch import nn
 from torch import Tensor
 import torch.nn.functional as F
 import numpy as np
-import statsmodels.api as sm
+from statsmodels.tsa.seasonal import seasonal_decompose
 from layers.PatchTST_backbone import PatchTST_backbone
 from layers.PatchTST_layers import series_decomp
 
@@ -18,6 +18,8 @@ class Model(nn.Module):
                  pre_norm:bool=False, store_attn:bool=False, pe:str='zeros', learn_pe:bool=True, pretrain_head:bool=False, head_type = 'flatten', verbose:bool=False, **kwargs):
         
         super().__init__()
+        self.statistical_projection = nn.Linear(2, configs.d_model)  # Assuming 2 features (daily & yearly)
+        self.final_projection = nn.Linear(configs.d_model * 2, configs.d_model)  # Combine statistical and learned features
         
         # load parameters
         c_in = configs.enc_in
@@ -42,7 +44,7 @@ class Model(nn.Module):
         affine = configs.affine
         subtract_last = configs.subtract_last
         
-        self.patch_model = PatchTST_backbone(
+        self.model = PatchTST_backbone(
             c_in=c_in, context_window = context_window, target_window=target_window, patch_len=patch_len, stride=stride, 
             max_seq_len=max_seq_len, n_layers=n_layers, d_model=d_model,
             n_heads=n_heads, d_k=d_k, d_v=d_v, d_ff=d_ff, norm=norm, attn_dropout=attn_dropout,
@@ -52,37 +54,26 @@ class Model(nn.Module):
             pretrain_head=pretrain_head, head_type=head_type, individual=individual, revin=revin, affine=affine,
             subtract_last=subtract_last, verbose=verbose, **kwargs)
     
-    
+    def extract_seasonal_features(self, data, freq_daily=96, freq_yearly=35040):
+        """
+        Extract daily and yearly features using sinusoidal models.
+        Args:
+            data (numpy array): Time series data of shape [T,]
+            freq_daily (int): Number of steps corresponding to daily frequency.
+            freq_yearly (int): Number of steps corresponding to yearly frequency.
+        Returns:
+            numpy array: Array of shape [T, 2] with daily and yearly patterns.
+        """
+        t = np.arange(len(data))
+        daily_pattern = np.sin(2 * np.pi * t / freq_daily)
+        yearly_pattern = np.sin(2 * np.pi * t / freq_yearly)
+        return np.column_stack((daily_pattern, yearly_pattern))
+
+
     def forward(self, x):           # x: [Batch, Input length, Channel]
-        batch_size, seq_len, _ = x.shape
-
-        # STL decomposition
-        stl_results = []
-        for i in range(batch_size):
-            series = x[i, :, 0].cpu().numpy()  # Extract time series for decomposition
-
-            # Decompose for yearly patterns
-            yearly_stl = sm.tsa.STL(series, seasonal=35040).fit()
-            trend_yearly = torch.tensor(yearly_stl.trend, device=x.device, dtype=torch.float32).unsqueeze(-1)
-            seasonal_yearly = torch.tensor(yearly_stl.seasonal, device=x.device, dtype=torch.float32).unsqueeze(-1)
-            residual_yearly = torch.tensor(yearly_stl.resid, device=x.device, dtype=torch.float32).unsqueeze(-1)
-
-            # Decompose residual for daily patterns
-            daily_stl = sm.tsa.STL(residual_yearly.squeeze(-1).cpu().numpy(), seasonal=96).fit()
-            trend_daily = torch.tensor(daily_stl.trend, device=x.device, dtype=torch.float32).unsqueeze(-1)
-            seasonal_daily = torch.tensor(daily_stl.seasonal, device=x.device, dtype=torch.float32).unsqueeze(-1)
-            residual_daily = torch.tensor(daily_stl.resid, device=x.device, dtype=torch.float32).unsqueeze(-1)
-            stl_results.append((trend, seasonal, residual))
-
-        trend, seasonal, residual = zip(*stl_results)
-        trend = torch.stack(trend, dim=0)  # [Batch, Seq_len, 1]
-        seasonal = torch.stack(seasonal, dim=0)  # [Batch, Seq_len, 1]
-        residual = torch.stack(residual, dim=0)  # [Batch, Seq_len, 1]
-
-        # Predict residuals using PatchTST
-        residual_pred = self.patch_model(residual.permute(0, 2, 1)).permute(0, 2, 1)
-
-        # Combine predictions
-        output = trend + seasonal + residual_pred  # [Batch, Seq_len, Channels]
-
+        x = x.permute(0, 2, 1)  # [Batch, Channel, Input length]
+        learned_features = self.model(x)  # [Batch, Channels, Input length]
+        stats_features = self.statistical_projection(stats_features)  # [Batch, Input length, D_model]
+        combined = torch.cat((learned_features.permute(0, 2, 1), stats_features), dim=-1)
+        output = self.final_projection(combined).permute(0, 2, 1)  # [Batch, Channel, Input length]
         return output
