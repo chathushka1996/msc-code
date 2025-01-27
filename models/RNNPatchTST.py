@@ -49,9 +49,9 @@ class Model(nn.Module):
             subtract_last=subtract_last, verbose=verbose, **kwargs)
         
         # RNN layer (LSTM or GRU)
-        self.rnn_type = configs.rnn_type  # 'LSTM' or 'GRU'
-        self.hidden_dim = configs.rnn_hidden_dim
-        self.num_layers = configs.rnn_num_layers
+        self.rnn_type = "LSTM"#configs.rnn_type  # 'LSTM' or 'GRU'
+        self.hidden_dim = 128 #configs.rnn_hidden_dim
+        self.num_layers = 2 #configs.rnn_num_layers
         if self.rnn_type == 'LSTM':
             self.rnn = nn.LSTM(d_model, self.hidden_dim, self.num_layers, batch_first=True)
         elif self.rnn_type == 'GRU':
