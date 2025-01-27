@@ -3,22 +3,24 @@ import torch
 from torch import nn
 from torch import Tensor
 import torch.nn.functional as F
+import numpy as np
 
 from layers.PatchTST_backbone import PatchTST_backbone
+from layers.PatchTST_layers import series_decomp
 
 class Model(nn.Module):
-    def __init__(self, configs, max_seq_len: Optional[int] = 1024, d_k: Optional[int] = None, d_v: Optional[int] = None,
-                 norm: str = 'BatchNorm', attn_dropout: float = 0., act: str = "gelu", key_padding_mask: bool = 'auto',
-                 padding_var: Optional[int] = None, attn_mask: Optional[Tensor] = None, res_attention: bool = True,
-                 pre_norm: bool = False, store_attn: bool = False, pe: str = 'zeros', learn_pe: bool = True,
+    def __init__(self, configs, rnn_type="LSTM", rnn_hidden_size=128, rnn_num_layers=1, max_seq_len: Optional[int] = 1024, 
+                 d_k: Optional[int] = None, d_v: Optional[int] = None, norm: str = 'BatchNorm', attn_dropout: float = 0., 
+                 act: str = "gelu", key_padding_mask: bool = 'auto', padding_var: Optional[int] = None, attn_mask: Optional[Tensor] = None, 
+                 res_attention: bool = True, pre_norm: bool = False, store_attn: bool = False, pe: str = 'zeros', learn_pe: bool = True, 
                  pretrain_head: bool = False, head_type='flatten', verbose: bool = False, **kwargs):
+        
         super().__init__()
         
-        # Load parameters
+        # Load PatchTST parameters
         c_in = configs.enc_in
         context_window = configs.seq_len
         target_window = configs.pred_len
-        
         n_layers = configs.e_layers
         n_heads = configs.n_heads
         d_model = configs.d_model
@@ -26,50 +28,53 @@ class Model(nn.Module):
         dropout = configs.dropout
         fc_dropout = configs.fc_dropout
         head_dropout = configs.head_dropout
-        
         individual = configs.individual
-        
         patch_len = configs.patch_len
         stride = configs.stride
         padding_patch = configs.padding_patch
-        
         revin = configs.revin
         affine = configs.affine
         subtract_last = configs.subtract_last
-        
-        # PatchTST backbone
-        self.patchtst_backbone = PatchTST_backbone(
-            c_in=c_in, context_window=context_window, target_window=target_window, patch_len=patch_len, stride=stride,
-            max_seq_len=max_seq_len, n_layers=n_layers, d_model=d_model,
-            n_heads=n_heads, d_k=d_k, d_v=d_v, d_ff=d_ff, norm=norm, attn_dropout=attn_dropout,
-            dropout=dropout, act=act, key_padding_mask=key_padding_mask, padding_var=padding_var,
-            attn_mask=attn_mask, res_attention=res_attention, pre_norm=pre_norm, store_attn=store_attn,
-            pe=pe, learn_pe=learn_pe, fc_dropout=fc_dropout, head_dropout=head_dropout, padding_patch=padding_patch,
-            pretrain_head=pretrain_head, head_type=head_type, individual=individual, revin=revin, affine=affine,
+
+        # Initialize PatchTST backbone
+        self.patch_tst = PatchTST_backbone(
+            c_in=c_in, context_window=context_window, target_window=target_window, patch_len=patch_len, stride=stride, 
+            max_seq_len=max_seq_len, n_layers=n_layers, d_model=d_model, n_heads=n_heads, d_k=d_k, d_v=d_v, d_ff=d_ff, 
+            norm=norm, attn_dropout=attn_dropout, dropout=dropout, act=act, key_padding_mask=key_padding_mask, 
+            padding_var=padding_var, attn_mask=attn_mask, res_attention=res_attention, pre_norm=pre_norm, store_attn=store_attn, 
+            pe=pe, learn_pe=learn_pe, fc_dropout=fc_dropout, head_dropout=head_dropout, padding_patch=padding_patch, 
+            pretrain_head=pretrain_head, head_type=head_type, individual=individual, revin=revin, affine=affine, 
             subtract_last=subtract_last, verbose=verbose, **kwargs)
-        
-        # RNN layer (LSTM or GRU)
-        self.rnn_type = "LSTM"#configs.rnn_type  # 'LSTM' or 'GRU'
-        self.hidden_dim = 128 #configs.rnn_hidden_dim
-        self.num_layers = 2 #configs.rnn_num_layers
-        if self.rnn_type == 'LSTM':
-            self.rnn = nn.LSTM(d_model, self.hidden_dim, self.num_layers, batch_first=True)
-        elif self.rnn_type == 'GRU':
-            self.rnn = nn.GRU(d_model, self.hidden_dim, self.num_layers, batch_first=True)
+
+        # RNN module (LSTM/GRU)
+        rnn_input_size = d_model
+        self.rnn_type = rnn_type
+        if rnn_type == "LSTM":
+            self.rnn = nn.LSTM(input_size=rnn_input_size, hidden_size=rnn_hidden_size, num_layers=rnn_num_layers, 
+                               batch_first=True, dropout=dropout, bidirectional=True)
+        elif rnn_type == "GRU":
+            self.rnn = nn.GRU(input_size=rnn_input_size, hidden_size=rnn_hidden_size, num_layers=rnn_num_layers, 
+                              batch_first=True, dropout=dropout, bidirectional=True)
         else:
             raise ValueError("Unsupported RNN type. Use 'LSTM' or 'GRU'.")
-        
-        # Fully connected output layer
-        self.fc = nn.Linear(self.hidden_dim, target_window)  # Predict for target window
 
-    def forward(self, x):  # x: [Batch, Input length, Channel]
-        # PatchTST backbone
+        # Fully connected output layer
+        self.fc = nn.Linear(2 * rnn_hidden_size, c_in)
+
+    def forward(self, x):
+        # x: [Batch, Input length, Channel]
         x = x.permute(0, 2, 1)  # [Batch, Channel, Input length]
-        x = self.patchtst_backbone(x)
         
-        # RNN processing
-        x, _ = self.rnn(x)  # [Batch, Seq Len, Hidden Dim]
-        
-        # Use the output of the last time step
-        x = self.fc(x[:, -1, :])  # [Batch, Target Window]
-        return x
+        # Pass through PatchTST backbone
+        x = self.patch_tst(x)  # [Batch, Channel, Target length]
+
+        # Transpose for RNN compatibility
+        x = x.permute(0, 2, 1)  # [Batch, Target length, Channel]
+
+        # Pass through RNN
+        rnn_out, _ = self.rnn(x)  # [Batch, Target length, 2 * rnn_hidden_size]
+
+        # Apply fully connected layer
+        output = self.fc(rnn_out)  # [Batch, Target length, Channel]
+
+        return output
