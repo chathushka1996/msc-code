@@ -42,7 +42,7 @@ class Model(nn.Module):
         affine = configs.affine
         subtract_last = configs.subtract_last
         
-        self.model = PatchTST_backbone(
+        self.patch_model = PatchTST_backbone(
             c_in=c_in, context_window = context_window, target_window=target_window, patch_len=patch_len, stride=stride, 
             max_seq_len=max_seq_len, n_layers=n_layers, d_model=d_model,
             n_heads=n_heads, d_k=d_k, d_v=d_v, d_ff=d_ff, norm=norm, attn_dropout=attn_dropout,
@@ -59,11 +59,11 @@ class Model(nn.Module):
         # STL decomposition
         stl_results = []
         for i in range(batch_size):
-            series = x[i, :, 0].cpu().numpy()
-            stl = sm.tsa.STL(series, seasonal=13).fit()
-            trend = torch.tensor(stl.trend, device=x.device).unsqueeze(-1)
-            seasonal = torch.tensor(stl.seasonal, device=x.device).unsqueeze(-1)
-            residual = torch.tensor(stl.resid, device=x.device).unsqueeze(-1)
+            series = x[i, :, 0].cpu().numpy()  # Extract time series for decomposition
+            stl = sm.tsa.STL(series, seasonal=13, period=seq_len).fit()  # Specify period
+            trend = torch.tensor(stl.trend, device=x.device, dtype=torch.float32).unsqueeze(-1)
+            seasonal = torch.tensor(stl.seasonal, device=x.device, dtype=torch.float32).unsqueeze(-1)
+            residual = torch.tensor(stl.resid, device=x.device, dtype=torch.float32).unsqueeze(-1)
             stl_results.append((trend, seasonal, residual))
 
         trend, seasonal, residual = zip(*stl_results)
@@ -76,4 +76,5 @@ class Model(nn.Module):
 
         # Combine predictions
         output = trend + seasonal + residual_pred  # [Batch, Seq_len, Channels]
+
         return output
