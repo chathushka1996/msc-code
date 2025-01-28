@@ -19,6 +19,8 @@ class Model(nn.Module):
                  pre_norm:bool=False, store_attn:bool=False, pe:str='zeros', learn_pe:bool=True, pretrain_head:bool=False, head_type = 'flatten', verbose:bool=False, **kwargs):
         
         super().__init__()
+        self.seasonal_period = 96
+        self.kernel_size = 97
         
         # load parameters
         c_in = configs.enc_in
@@ -55,12 +57,17 @@ class Model(nn.Module):
     
     def decompose_single_series_gpu(self, series):
         """Performs approximate STL decomposition on a single time series using GPU."""
+        # series shape: [batch_size, seq_len]
         batch_size, seq_len = series.shape
 
         # Low-pass filter for trend extraction
         trend_filter = torch.ones(1, 1, self.kernel_size, device=series.device) / self.kernel_size
-        trend = F.conv1d(series.unsqueeze(1), trend_filter, padding=self.kernel_size // 2)
+        padding = self.kernel_size // 2  # Ensure output size matches input size
+        trend = F.conv1d(series.unsqueeze(1), trend_filter, padding=padding)
         trend = trend.squeeze(1)
+
+        # Ensure trend matches series size (trim excess, if any)
+        trend = trend[:, :seq_len]
 
         # Seasonal extraction: subtract trend and apply periodic smoothing
         detrended = series - trend
@@ -68,15 +75,23 @@ class Model(nn.Module):
         seasonal_filter[::self.seasonal_period] = 1.0
         seasonal_filter = seasonal_filter / seasonal_filter.sum()  # Normalize
 
-        seasonal = F.conv1d(detrended.unsqueeze(1), seasonal_filter.view(1, 1, -1), padding=self.seasonal_period // 2)
+        # Convolution with periodic filter
+        seasonal = F.conv1d(
+            detrended.unsqueeze(1),
+            seasonal_filter.view(1, 1, -1),
+            padding=self.seasonal_period // 2,
+        )
         seasonal = seasonal.squeeze(1)
+
+        # Ensure seasonal matches series size (trim excess, if any)
+        seasonal = seasonal[:, :seq_len]
 
         # Residual computation
         residual = series - trend - seasonal
 
         return trend, seasonal, residual
-    
-    def forward(self, x):           # x: [Batch, Input length, Channel]
+
+    def forward(self, x):
         """Forward pass for the model."""
         batch_size, seq_len, _ = x.shape
 
