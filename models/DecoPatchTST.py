@@ -1,6 +1,7 @@
 __all__ = ['PatchTST']
 
 # Cell
+from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Optional
 import torch
 from torch import nn
@@ -52,36 +53,35 @@ class Model(nn.Module):
             pretrain_head=pretrain_head, head_type=head_type, individual=individual, revin=revin, affine=affine,
             subtract_last=subtract_last, verbose=verbose, **kwargs)
     
+    def decompose_single_series(self, series, seq_len):
+        """Performs STL decomposition on a single time series."""
+        stl = sm.tsa.STL(series, seasonal=97, period=seq_len).fit()
+        trend = torch.tensor(stl.trend, dtype=torch.float32).unsqueeze(-1)
+        seasonal = torch.tensor(stl.seasonal, dtype=torch.float32).unsqueeze(-1)
+        residual = torch.tensor(stl.resid, dtype=torch.float32).unsqueeze(-1)
+        return trend, seasonal, residual
     
     def forward(self, x):           # x: [Batch, Input length, Channel]
+        """Forward pass for the model."""
         batch_size, seq_len, _ = x.shape
 
-        # STL decomposition
-        stl_results = []
-        for i in range(batch_size):
-            series = x[i, :, 0].cpu().numpy()
-            stl = sm.tsa.STL(series, seasonal=96, period=seq_len).fit()
-            trend = torch.tensor(stl.trend, device=x.device, dtype=torch.float32).unsqueeze(-1)
-            seasonal = torch.tensor(stl.seasonal, device=x.device, dtype=torch.float32).unsqueeze(-1)
-            residual = torch.tensor(stl.resid, device=x.device, dtype=torch.float32).unsqueeze(-1)
-            stl_results.append((trend, seasonal, residual))
+        # Extract the input series as NumPy arrays for decomposition
+        series_list = [x[i, :, 0].cpu().numpy() for i in range(batch_size)]
 
-        trend, seasonal, residual = zip(*stl_results)
-        trend = torch.stack(trend, dim=0)
-        seasonal = torch.stack(seasonal, dim=0)
-        residual = torch.stack(residual, dim=0)
+        # Parallel STL decomposition
+        with ThreadPoolExecutor() as executor:
+            results = list(executor.map(lambda s: self.decompose_single_series(s, seq_len), series_list))
 
-        # Debug shapes
-        print(f"Trend shape: {trend.shape}")
-        print(f"Seasonal shape: {seasonal.shape}")
-        print(f"Residual shape: {residual.shape}")
+        # Unpack trends, seasonals, and residuals from the results
+        trend, seasonal, residual = zip(*results)
+        trend = torch.stack(trend, dim=0).to(x.device)
+        seasonal = torch.stack(seasonal, dim=0).to(x.device)
+        residual = torch.stack(residual, dim=0).to(x.device)
 
         # Predict residuals using PatchTST
         residual_pred = self.patch_model(residual.permute(0, 2, 1)).permute(0, 2, 1)
-        print(f"Residual prediction shape: {residual_pred.shape}")
 
-        # Combine predictions
+        # Combine trend, seasonal, and residual predictions
         output = trend + seasonal + residual_pred
-        print(f"Output shape: {output.shape}")
 
         return output
