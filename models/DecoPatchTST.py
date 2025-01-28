@@ -51,38 +51,56 @@ class Model(nn.Module):
             pe=pe, learn_pe=learn_pe, fc_dropout=fc_dropout, head_dropout=head_dropout, padding_patch = padding_patch,
             pretrain_head=pretrain_head, head_type=head_type, individual=individual, revin=revin, affine=affine,
             subtract_last=subtract_last, verbose=verbose, **kwargs)
+        
+        def decompose(self, series, seasonal):
+            """
+            Perform STL decomposition.
+            Args:
+                series: Time series data (numpy array).
+                seasonal: Seasonal period for decomposition.
+            Returns:
+                trend, seasonal, residual: Decomposed components.
+            """
+            stl = sm.tsa.STL(series, seasonal=seasonal).fit()
+            return stl.trend, stl.seasonal, stl.resid
     
     
     def forward(self, x):           # x: [Batch, Input length, Channel]
-        batch_size, seq_len, _ = x.shape
+        # Decompose input series for yearly pattern
+        x_np = x.cpu().numpy()
+        trend_yearly, seasonal_yearly, residual_yearly = [], [], []
+        for i in range(x_np.shape[0]):
+            trend, seasonal, resid = self.decompose(x_np[i, :, 0], seasonal=35040)  # Yearly seasonality
+            trend_yearly.append(trend)
+            seasonal_yearly.append(seasonal)
+            residual_yearly.append(resid)
 
-        # STL decomposition
-        stl_results = []
-        for i in range(batch_size):
-            series = x[i, :, 0].cpu().numpy()  # Extract time series for decomposition
+        # Convert yearly components back to tensors
+        trend_yearly = torch.tensor(trend_yearly, device=x.device, dtype=x.dtype).unsqueeze(-1)
+        seasonal_yearly = torch.tensor(seasonal_yearly, device=x.device, dtype=x.dtype).unsqueeze(-1)
+        residual_yearly = torch.tensor(residual_yearly, device=x.device, dtype=x.dtype).unsqueeze(-1)
 
-            # Decompose for yearly patterns
-            yearly_stl = sm.tsa.STL(series, seasonal=35040).fit()
-            trend_yearly = torch.tensor(yearly_stl.trend, device=x.device, dtype=torch.float32).unsqueeze(-1)
-            seasonal_yearly = torch.tensor(yearly_stl.seasonal, device=x.device, dtype=torch.float32).unsqueeze(-1)
-            residual_yearly = torch.tensor(yearly_stl.resid, device=x.device, dtype=torch.float32).unsqueeze(-1)
+        # Decompose residual for daily pattern
+        trend_daily, seasonal_daily, residual_daily = [], [], []
+        residual_np = residual_yearly.squeeze(-1).cpu().numpy()
+        for i in range(residual_np.shape[0]):
+            trend, seasonal, resid = self.decompose(residual_np[i], seasonal=96)  # Daily seasonality
+            trend_daily.append(trend)
+            seasonal_daily.append(seasonal)
+            residual_daily.append(resid)
 
-            # Decompose residual for daily patterns
-            daily_stl = sm.tsa.STL(residual_yearly.squeeze(-1).cpu().numpy(), seasonal=96).fit()
-            trend_daily = torch.tensor(daily_stl.trend, device=x.device, dtype=torch.float32).unsqueeze(-1)
-            seasonal_daily = torch.tensor(daily_stl.seasonal, device=x.device, dtype=torch.float32).unsqueeze(-1)
-            residual_daily = torch.tensor(daily_stl.resid, device=x.device, dtype=torch.float32).unsqueeze(-1)
-            stl_results.append((trend, seasonal, residual))
+        # Convert daily components back to tensors
+        trend_daily = torch.tensor(trend_daily, device=x.device, dtype=x.dtype).unsqueeze(-1)
+        seasonal_daily = torch.tensor(seasonal_daily, device=x.device, dtype=x.dtype).unsqueeze(-1)
+        residual_daily = torch.tensor(residual_daily, device=x.device, dtype=x.dtype).unsqueeze(-1)
 
-        trend, seasonal, residual = zip(*stl_results)
-        trend = torch.stack(trend, dim=0)  # [Batch, Seq_len, 1]
-        seasonal = torch.stack(seasonal, dim=0)  # [Batch, Seq_len, 1]
-        residual = torch.stack(residual, dim=0)  # [Batch, Seq_len, 1]
+        # Combine components
+        combined_trend = trend_yearly + trend_daily
+        combined_seasonal = seasonal_yearly + seasonal_daily
 
-        # Predict residuals using PatchTST
-        residual_pred = self.patch_model(residual.permute(0, 2, 1)).permute(0, 2, 1)
+        # Predict residual using PatchTST
+        residual_pred = self.patch_model(residual_daily.permute(0, 2, 1)).permute(0, 2, 1)
 
-        # Combine predictions
-        output = trend + seasonal + residual_pred  # [Batch, Seq_len, Channels]
-
+        # Final output: trend + seasonal + residual prediction
+        output = combined_trend[:, -self.pred_len:, :] + combined_seasonal[:, -self.pred_len:, :] + residual_pred
         return output
