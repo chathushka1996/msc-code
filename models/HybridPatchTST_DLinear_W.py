@@ -12,8 +12,8 @@ class Model(nn.Module):
         self.weight_patchtst = nn.Parameter(torch.tensor(0.5))
         
         # Initialize both models
-        self.dlinear = DLinear(configs)
-        self.patchtst = PatchTST(configs)
+        self.dlinear = DLinear.Model(configs)
+        self.patchtst = PatchTST.Model(configs)
     
     def forward(self, x):
         # Get predictions from both models
