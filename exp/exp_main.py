@@ -1,6 +1,6 @@
 from data_provider.data_factory import data_provider
 from exp.exp_basic import Exp_Basic
-from models import DecoPatchTST, DecompPatchTST, FourierPatchTST, PatchTST, RNNPatchTST
+from models import DecoPatchTST, DecompPatchTST, FourierPatchTST, HybridPatchTST_DLinear, PatchTST, RNNPatchTST
 from utils.tools import EarlyStopping, adjust_learning_rate, visual, test_params_flop
 from utils.metrics import metric
 
@@ -31,7 +31,8 @@ class Exp_Main(Exp_Basic):
             'DecompPatchTST': DecompPatchTST,
             'RNNPatchTST': RNNPatchTST,
             'DecoPatchTST': DecoPatchTST,
-            'FourierPatchTST': FourierPatchTST
+            'FourierPatchTST': FourierPatchTST,
+            'HybridPatchTST_DLinear': HybridPatchTST_DLinear
         }
         model = model_dict[self.args.model].Model(self.args).float()
 
