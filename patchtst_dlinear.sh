@@ -5,7 +5,7 @@ if [ ! -d $path/logs ]; then
 fi
 
 seq_len=96
-model_name=HybridPatchTST_DLinear_W
+model_name=HybridPatchTST_DLinear_A
 dataset=sl
 root_path_name=./data/$dataset
 data_path_name=solar.csv
