@@ -58,7 +58,7 @@ class Model(nn.Module):
         
         self.conv1 = nn.Conv1d(self.channels, configs.d_model, kernel_size=3, padding=1)
         self.encoder = TransformerBlock(configs.d_model, configs.n_heads, configs.d_ff, dropout=configs.dropout)
-        self.fc = nn.Linear(configs.d_model, configs.pred_len)  # Ensure correct pred_len
+        self.fc = nn.Linear(configs.d_model, self.pred_len)  # Ensure correct pred_len
         
     def forward(self, x):
         seasonal, trend = self.decomp(x)
@@ -67,7 +67,13 @@ class Model(nn.Module):
         x = seasonal + trend
 
         x = self.encoder(x.permute(1, 0, 2))  # [seq_len, batch, d_model]
-        x = self.fc(x[-1]).unsqueeze(1)  # [batch, 1, pred_len] 
+        x = self.fc(x[-1]).unsqueeze(1)  # [batch, 1, pred_len]
         
-        print(f"Output shape: {x.shape}, Target shape: batch_y.shape")  # Debugging line
+        # Debugging print
+        print(f"Output shape: {x.shape}, Adjusting to match batch_y if needed")
+        
+        # Ensure the output shape matches batch_y.shape[-1]
+        if x.shape[-1] != self.pred_len:
+            x = x[:, :, :self.pred_len]  # Truncate or reshape dynamically
+
         return x
