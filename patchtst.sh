@@ -6,7 +6,7 @@ fi
 
 seq_len=96
 model_name=PatchTST
-dataset=sl_t
+dataset=us_t
 root_path_name=./data/$dataset
 data_path_name=solar.csv
 model_id_name=solar_$dataset
