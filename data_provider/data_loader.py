@@ -230,7 +230,10 @@ class Dataset_Custom(Dataset):
             df_raw = pd.read_csv(os.path.join(self.root_path, "val.csv"))
         else:
             raise ValueError(f"Invalid set_type: {self.set_type}")
-
+        _timestamp = pd.to_datetime(df_raw['date'])
+        df_raw['dayofyear'] = _timestamp.dt.dayofyear
+        df_raw['timeofday'] = _timestamp.dt.hour * 3600 + _timestamp.dt.minute * 60 + _timestamp.dt.second
+        
         cols = list(df_raw.columns)
         cols.remove(self.target)
         cols.remove('date')
