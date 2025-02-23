@@ -1,10 +1,10 @@
-path=.
+path=./drive/MyDrive/msc-thesis
 if [ ! -d "$path/logs" ]; then
-    mkdir $path/logs
+    mkdir $path/logs -p
 fi
 
 if [ ! -d "$path/logs/LongForecasting" ]; then
-    mkdir $path/logs/LongForecasting
+    mkdir $path/logs/LongForecasting -p
 fi
 
 seq_len=96

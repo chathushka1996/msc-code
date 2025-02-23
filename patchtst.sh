@@ -1,7 +1,7 @@
-path = .
-# if [ ! -d "$path/logs" ]; then
-#     mkdir $path/logs
-# fi
+path=.
+if [ ! -d "$path/logs" ]; then
+    mkdir $path/logs
+fi
 
 seq_len=96
 model_name=PatchTST
@@ -14,7 +14,7 @@ pred_len=96
 random_seed=2021
 checkpoints=$path/models/
 
-for pred_len in 96 #192 336 720 1440 2880 5760
+for pred_len in 96 192 336 720
 do
     python -u run_longExp.py \
         --random_seed $random_seed \
