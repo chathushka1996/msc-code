@@ -1,20 +1,22 @@
-path=./drive/MyDrive/msc-val
-if [ ! -d "$path/logs" ]; then
-    mkdir $path/logs -p
+if [ ! -d "./drive/MyDrive/msc/logs" ]; then
+    mkdir ./drive/MyDrive/msc/logs
 fi
 
+if [ ! -d "./drive/MyDrive/msc/logs/LongForecasting" ]; then
+    mkdir ./drive/MyDrive/msc/logs/LongForecasting
+fi
 
 seq_len=96
-dataset=sl_t
+dataset=sl_cross
 root_path_name=./data/$dataset
 data_path_name=solar.csv
 model_id_name=solar_$dataset
 data_name=custom
 random_seed=2021
-checkpoints=$path/model
+
 model_name=Informer
 
-for pred_len in 96
+for pred_len in 96 192 336 720
 do
   python -u run_longExp.py \
     --random_seed $random_seed \
@@ -39,5 +41,5 @@ do
     --train_epochs 20\
     --patience 5\
     --checkpoints $checkpoints\
-    --train_epochs 20 > $path/logs/$model_name'_'$model_id_name'_'$pred_len.log
+    --train_epochs 20 >drive/MyDrive/msc/logs/LongForecasting/$model_name'_'$model_id_name'_'$pred_len.log
 done

@@ -1,7 +1,6 @@
 from data_provider.data_factory import data_provider
 from exp.exp_basic import Exp_Basic
-from iTransformer.model import Autoformer, Linear, NLinear, Transformer
-from models import AutoPatchTST, DecoPatchTST, DecompPatchTST, DecomposedInformer, FourierPatchTST, HybridPatchTST, HybridPatchTST_DLinear, DLinear, HybridPatchTST_DLinear_A, HybridPatchTST_DLinear_W, ImprovedPatchTST, Informer, PatchInformer, PatchTST, RNNPatchTST
+from models import Informer, Autoformer, Transformer, DLinear, Linear, NLinear, PatchTST
 from utils.tools import EarlyStopping, adjust_learning_rate, visual, test_params_flop
 from utils.metrics import metric
 
@@ -26,27 +25,13 @@ class Exp_Main(Exp_Basic):
 
     def _build_model(self):
         model_dict = {
-            'DecompPatchTST': DecompPatchTST,
-            'RNNPatchTST': RNNPatchTST,
-            'DecoPatchTST': DecoPatchTST,
-            'FourierPatchTST': FourierPatchTST,
-            'DLinear': DLinear,
-            'PatchTST': PatchTST,
-            'HybridPatchTST_DLinear': HybridPatchTST_DLinear,
-            'HybridPatchTST_DLinear_W': HybridPatchTST_DLinear_W,
-            'HybridPatchTST_DLinear_A': HybridPatchTST_DLinear_A,
-            'ImprovedPatchTST': ImprovedPatchTST,
-            'AutoPatchTST': AutoPatchTST,
-            'PatchInformer': PatchInformer,
-            'Informer': Informer,
-            'DecomposedInformer': DecomposedInformer,
-            'HybridPatchTST': HybridPatchTST,
             'Autoformer': Autoformer,
             'Transformer': Transformer,
             'Informer': Informer,
             'DLinear': DLinear,
             'NLinear': NLinear,
             'Linear': Linear,
+            'PatchTST': PatchTST,
         }
         model = model_dict[self.args.model].Model(self.args).float()
 
@@ -313,10 +298,10 @@ class Exp_Main(Exp_Basic):
             os.makedirs(folder_path)
 
         mae, mse, rmse, mape, mspe, rse, corr = metric(preds, trues)
-        print('mse:{}, mae:{}, rse:{}, rmse: {}, mape: {}, mspe: {}, corr: {}'.format(mse, mae, rse, rmse, mape, mspe, corr))
+        print('mse:{}, mae:{}, rse:{}'.format(mse, mae, rse))
         f = open("result.txt", 'a')
         f.write(setting + "  \n")
-        f.write('mse:{}, mae:{}, rse:{}, rmse: {}, mape: {}, mspe: {}, corr: {}'.format(mse, mae, rse, rmse,mape, mspe, corr))
+        f.write('mse:{}, mae:{}, rse:{}'.format(mse, mae, rse))
         f.write('\n')
         f.write('\n')
         f.close()

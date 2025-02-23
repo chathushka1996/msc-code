@@ -1,43 +1,36 @@
+# add --individual for DLinear-I
 path=./drive/MyDrive/msc-val
 if [ ! -d "$path/logs" ]; then
     mkdir $path/logs -p
 fi
 
-
 seq_len=96
+model_name=DLinear
+
 dataset=sl_t
 root_path_name=./data/$dataset
 data_path_name=solar.csv
 model_id_name=solar_$dataset
 data_name=custom
+pred_len=96
 random_seed=2021
-checkpoints=$path/model
-model_name=Informer
-
-for pred_len in 96
+checkpoints=$path/models/
+for pred_len in 96 192 336 720
 do
-  python -u run_longExp.py \
-    --random_seed $random_seed \
+    python -u run_longExp.py \
     --is_training 1 \
     --root_path $root_path_name \
     --data_path $data_path_name \
-    --model_id $model_id_name_$pred_len \
+    --model_id $model_name_$seq_len'_'$pred_len \
     --model $model_name \
     --data custom \
     --features M \
     --seq_len $seq_len \
-    --label_len 48 \
     --pred_len $pred_len \
-    --e_layers 2 \
-    --d_layers 1 \
-    --factor 3 \
-    --enc_in 8 \
-    --dec_in 8 \
-    --c_out 8 \
+    --enc_in 21 \
     --des 'Exp' \
-    --itr 1 \
     --train_epochs 20\
     --patience 5\
     --checkpoints $checkpoints\
-    --train_epochs 20 > $path/logs/$model_name'_'$model_id_name'_'$pred_len.log
+    --itr 1 --batch_size 16  > $path/logs/$model_name'_'$model_id_name'_'$seq_len'_'$pred_len.log
 done

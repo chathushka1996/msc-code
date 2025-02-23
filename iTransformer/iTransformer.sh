@@ -1,5 +1,8 @@
 export CUDA_VISIBLE_DEVICES=1
-
+path=./drive/MyDrive/msc-val
+if [ ! -d "$path/logs" ]; then
+    mkdir $path/logs -p
+fi
 model_name=iTransformer
 seq_len=96
 dataset=sl_t
