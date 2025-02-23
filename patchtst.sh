@@ -1,6 +1,7 @@
-path=.
+# path=.
+path=./drive/MyDrive/msc-val
 if [ ! -d "$path/logs" ]; then
-    mkdir $path/logs
+    mkdir $path/logs -p
 fi
 
 seq_len=96
