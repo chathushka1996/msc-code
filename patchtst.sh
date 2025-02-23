@@ -36,7 +36,7 @@ python -u run_longExp.py \
     --patch_len 16\
     --stride 8\
     --des 'Exp' \
-    --train_epochs 100\
+    --train_epochs 50\
     --patience 5\
     --checkpoints $checkpoints\
     --itr 1 --batch_size 128 --learning_rate 0.0001 > $path/logs/$model_name'_'$model_id_name'_'$seq_len'_'$pred_len.log
