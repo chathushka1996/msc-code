@@ -101,7 +101,7 @@ if __name__ == '__main__':
     np.random.seed(fix_seed)
 
 
-    args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
+    args.use_gpu = True
 
     if args.use_gpu and args.use_multi_gpu:
         args.dvices = args.devices.replace(' ', '')
