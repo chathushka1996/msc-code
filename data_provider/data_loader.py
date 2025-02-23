@@ -233,8 +233,9 @@ class Dataset_Custom(Dataset):
         _timestamp = pd.to_datetime(df_raw['date'])
         df_raw['dayofyear'] = _timestamp.dt.dayofyear
         df_raw['timeofday'] = _timestamp.dt.hour * 3600 + _timestamp.dt.minute * 60 + _timestamp.dt.second
-        
+
         cols = list(df_raw.columns)
+        print(cols)
         cols.remove(self.target)
         cols.remove('date')
         df_raw = df_raw[['date'] + cols + [self.target]]
