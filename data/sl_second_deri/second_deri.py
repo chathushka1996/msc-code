@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-type = 'val'
+type = 'test'
 # Load the CSV file
 df = pd.read_csv(f'data/sl_t/{type}.csv')
 
@@ -16,7 +16,7 @@ for col in columns:
     df[f'{col}_second_deriv'] = np.gradient(df[f'{col}_first_deriv'])
     
     # Third derivative
-    # df[f'{col}_third_deriv'] = np.gradient(df[f'{col}_second_deriv'])
+    df[f'{col}_third_deriv'] = np.gradient(df[f'{col}_second_deriv'])
 
 # Reorder columns to ensure 'Solar Power Output' is the last column
 # Get the list of all columns except 'Solar Power Output'
@@ -27,6 +27,6 @@ cols.append('Solar Power Output')
 df = df[cols]
 
 # Save the new DataFrame to a CSV file
-df.to_csv(f'data/sl_second_deri/{type}.csv', index=False)
+df.to_csv(f'data/sl_third_deri/{type}.csv', index=False)
 
 print("Derivatives calculated and saved to 'new_file_with_derivatives.csv'")
