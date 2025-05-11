@@ -47,9 +47,9 @@ class InvertedTransformerLayer(nn.Module):
         return src
 
 # Define model architecture (same as during training)
-class InvertedPatchTST(nn.Module):
+class InvertedPatchTF(nn.Module):
     def __init__(self, patch_length, output_length, num_patches, d_model, nhead, num_layers, dropout, num_features):
-        super(InvertedPatchTST, self).__init__()
+        super(InvertedPatchTF, self).__init__()
         self.patch_length = patch_length
         self.num_patches = num_patches
         self.d_model = d_model
@@ -92,7 +92,7 @@ def select_model_scalers(prediction_steps):
     output_length = prediction_steps    # Output sequence length
     # Load the trained model
     # Ensure the model is loaded onto the CPU
-    model = InvertedPatchTST(patch_length, output_length, num_patches, d_model, nhead, num_layers, dropout, num_features)
+    model = InvertedPatchTF(patch_length, output_length, num_patches, d_model, nhead, num_layers, dropout, num_features)
 
     # Load the model with map_location set to 'cpu'
     model.load_state_dict(torch.load(f'save/{prediction_steps}/solar_power_model.pth', map_location=torch.device('cpu')))
