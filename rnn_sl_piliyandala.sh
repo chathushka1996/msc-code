@@ -1,11 +1,11 @@
-# path=.
+# RNN model for sl_piliyandala dataset
 path=./drive/MyDrive/msc-val
 if [ ! -d "$path/logs" ]; then
     mkdir $path/logs -p
 fi
 
 seq_len=96
-model_name=PatchTST
+model_name=RNN
 dataset=sl_piliyandala
 root_path_name=./dataset/$dataset
 data_path_name=solar.csv
@@ -28,15 +28,10 @@ do
         --features M \
         --seq_len $seq_len \
         --pred_len $pred_len \
-        --e_layers 3 \
-        --n_heads 16 \
+        --e_layers 2 \
         --d_model 128 \
         --d_ff 256 \
         --dropout 0.2\
-        --fc_dropout 0.2\
-        --head_dropout 0\
-        --patch_len 16\
-        --stride 8\
         --des 'Exp' \
         --train_epochs 50\
         --patience 5\
