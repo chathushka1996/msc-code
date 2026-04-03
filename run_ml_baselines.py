@@ -65,6 +65,12 @@ def MAPE(pred, true):
 def MSPE(pred, true):
     return np.mean(np.square((pred - true) / (true + 1e-8)))
 
+def R2(pred, true):
+    """R-squared (coefficient of determination)"""
+    ss_res = np.sum((true - pred) ** 2)
+    ss_tot = np.sum((true - true.mean()) ** 2)
+    return 1 - (ss_res / (ss_tot + 1e-8))
+
 def metric(pred, true):
     mae = MAE(pred, true)
     mse = MSE(pred, true)
@@ -73,7 +79,8 @@ def metric(pred, true):
     mspe = MSPE(pred, true)
     rse = RSE(pred, true)
     corr = CORR(pred, true)
-    return mae, mse, rmse, mape, mspe, rse, corr
+    r2 = R2(pred, true)
+    return mae, mse, rmse, mape, mspe, rse, corr, r2
 
 
 def load_data(root_path, target='Solar Power Output'):
@@ -144,11 +151,12 @@ def train_and_evaluate_model(model, model_name, X_train, y_train, X_val, y_val, 
         y_pred_test = y_pred_test.reshape(-1, pred_len, 1)
         y_test_reshaped = y_test.reshape(-1, pred_len, 1)
     
-    mae, mse, rmse, mape, mspe, rse, corr = metric(y_pred_test, y_test_reshaped)
+    mae, mse, rmse, mape, mspe, rse, corr, r2 = metric(y_pred_test, y_test_reshaped)
     
     print(f"\nTest Results for {model_name}:")
     print(f"  MSE:  {mse:.6f}")
     print(f"  MAE:  {mae:.6f}")
+    print(f"  R²:   {r2:.6f}")
     print(f"  RMSE: {rmse:.6f}")
     print(f"  MAPE: {mape:.6f}")
     print(f"  MSPE: {mspe:.6f}")
@@ -160,6 +168,7 @@ def train_and_evaluate_model(model, model_name, X_train, y_train, X_val, y_val, 
         'model': model_name,
         'mse': float(mse),
         'mae': float(mae),
+        'r2': float(r2),
         'rmse': float(rmse),
         'mape': float(mape),
         'mspe': float(mspe),
@@ -308,6 +317,7 @@ def main():
                 f.write(f"Pred Length: {args.pred_len}\n")
                 f.write(f"MSE: {result['mse']}\n")
                 f.write(f"MAE: {result['mae']}\n")
+                f.write(f"R2: {result['r2']}\n")
                 f.write(f"RMSE: {result['rmse']}\n")
                 f.write(f"MAPE: {result['mape']}\n")
                 f.write(f"MSPE: {result['mspe']}\n")
@@ -321,20 +331,20 @@ def main():
             import traceback
             traceback.print_exc()
     
-    print(f"\n{'='*60}")
+    print(f"\n{'='*80}")
     print("Summary of Results")
-    print(f"{'='*60}")
-    print(f"{'Model':<20} {'MSE':>12} {'MAE':>12} {'RMSE':>12}")
-    print("-" * 60)
+    print(f"{'='*80}")
+    print(f"{'Model':<20} {'MSE':>12} {'MAE':>12} {'R²':>12} {'RMSE':>12}")
+    print("-" * 80)
     for r in results:
-        print(f"{r['model']:<20} {r['mse']:>12.6f} {r['mae']:>12.6f} {r['rmse']:>12.6f}")
+        print(f"{r['model']:<20} {r['mse']:>12.6f} {r['mae']:>12.6f} {r['r2']:>12.6f} {r['rmse']:>12.6f}")
     
     with open("ml_baseline_results.txt", 'a') as f:
-        f.write(f"\n{'='*60}\n")
+        f.write(f"\n{'='*80}\n")
         f.write(f"Dataset: {args.dataset}, Seq: {args.seq_len}, Pred: {args.pred_len}\n")
-        f.write(f"{'='*60}\n")
+        f.write(f"{'='*80}\n")
         for r in results:
-            f.write(f"{r['model']}: mse={r['mse']:.6f}, mae={r['mae']:.6f}, rmse={r['rmse']:.6f}\n")
+            f.write(f"{r['model']}: mse={r['mse']:.6f}, mae={r['mae']:.6f}, r2={r['r2']:.6f}, rmse={r['rmse']:.6f}\n")
     
     results_file = os.path.join(args.log_path, f"ml_results_{args.dataset}_{args.seq_len}_{args.pred_len}.json")
     with open(results_file, 'w') as f:
