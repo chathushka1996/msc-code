@@ -3,42 +3,110 @@ ML Baseline Models Evaluation for Time Series Forecasting
 Evaluates: Gradient Boosting, XGBoost, KNN, LightGBM, CatBoost
 
 Dataset: sl_piliyandala (Solar Power Output Forecasting)
+
+Hardware: This script does NOT use PyTorch/CUDA. Tree/KNN models run on CPU
+(multi-threaded where supported). Use run_longExp.py for GPU deep learning.
+Optional: --use_ml_gpu enables GPU for XGBoost/LightGBM/CatBoost when available.
 """
 
 import argparse
 import os
+import sys
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.multioutput import MultiOutputRegressor
+from sklearn.base import clone
 import warnings
 import time
 import json
 
+try:
+    from tqdm import tqdm
+except ImportError:
+    tqdm = None
+
 warnings.filterwarnings('ignore')
+
+
+def _print(msg="", **kwargs):
+    print(msg, flush=True, **kwargs)
+
+
+def print_runtime_environment(use_ml_gpu=False):
+    """Clarify CPU vs GPU so long runs do not look 'stuck' with no context."""
+    _print("\n" + "=" * 60)
+    _print("RUNTIME / DEVICE")
+    _print("=" * 60)
+    try:
+        import torch
+        cuda = torch.cuda.is_available()
+        if cuda:
+            _print(f"  PyTorch CUDA available: yes (device: {torch.cuda.get_device_name(0)})")
+        else:
+            _print("  PyTorch CUDA available: no")
+    except Exception as e:
+        _print(f"  PyTorch: not checked ({e})")
+    _print("  This script (ML baselines): uses sklearn / XGBoost / LightGBM / CatBoost — not PyTorch.")
+    _print("  Default backend: CPU (n_jobs=-1 where supported).")
+    if use_ml_gpu:
+        _print("  --use_ml_gpu: will try GPU for XGBoost/LightGBM/CatBoost if drivers/libs allow.")
+    else:
+        _print("  GPU for tree libs: off (pass --use_ml_gpu to try XGB/LGBM/Cat GPU).")
+    _print("=" * 60 + "\n")
+
+
+def fit_multioutput_with_progress(base_estimator, X, y, model_name, use_tqdm=True):
+    """
+    Fit one estimator per output column with progress. MultiOutputRegressor can
+    train hundreds of sub-models (seq_len * n_features outputs) with no logs — this fixes that.
+    """
+    n_out = y.shape[1]
+    estimators = [clone(base_estimator) for _ in range(n_out)]
+    iterator = range(n_out)
+    if use_tqdm and tqdm is not None:
+        iterator = tqdm(
+            iterator,
+            desc=f"{model_name} ({n_out} outputs)",
+            file=sys.stdout,
+            mininterval=1.0,
+            unit="out",
+        )
+    elif tqdm is None and n_out > 50:
+        _print(f"  (install tqdm for a progress bar: pip install tqdm)")
+
+    for i in iterator:
+        if tqdm is None and n_out > 20 and (i % max(1, n_out // 10) == 0 or i == n_out - 1):
+            _print(f"  [{model_name}] training output dimension {i + 1}/{n_out} ...")
+        estimators[i].fit(X, y[:, i])
+
+    mor = MultiOutputRegressor(base_estimator)
+    mor.estimators_ = estimators
+    mor.n_outputs_ = n_out
+    return mor
 
 try:
     import xgboost as xgb
     HAS_XGBOOST = True
 except ImportError:
     HAS_XGBOOST = False
-    print("XGBoost not installed. Install with: pip install xgboost")
+    _print("XGBoost not installed. Install with: pip install xgboost")
 
 try:
     import lightgbm as lgb
     HAS_LIGHTGBM = True
 except ImportError:
     HAS_LIGHTGBM = False
-    print("LightGBM not installed. Install with: pip install lightgbm")
+    _print("LightGBM not installed. Install with: pip install lightgbm")
 
 try:
     from catboost import CatBoostRegressor
     HAS_CATBOOST = True
 except ImportError:
     HAS_CATBOOST = False
-    print("CatBoost not installed. Install with: pip install catboost")
+    _print("CatBoost not installed. Install with: pip install catboost")
 
 
 def RSE(pred, true):
@@ -108,41 +176,53 @@ def load_data(root_path, target='Solar Power Output'):
     return train_scaled, val_scaled, test_scaled, scaler, len(feature_cols)
 
 
-def create_sequences(data, seq_len, pred_len, features='M'):
+def create_sequences(data, seq_len, pred_len, features='M', desc="Building sequences"):
     """Create sequences for time series forecasting."""
     X, y = [], []
+    n = len(data) - seq_len - pred_len + 1
     n_features = data.shape[1]
-    
-    for i in range(len(data) - seq_len - pred_len + 1):
-        X.append(data[i:i+seq_len].flatten())
+    iterator = range(n)
+    if tqdm is not None and n > 5000:
+        iterator = tqdm(iterator, desc=desc, file=sys.stdout, mininterval=1.0, unit="win")
+
+    for i in iterator:
+        X.append(data[i:i + seq_len].flatten())
         if features == 'M':
-            y.append(data[i+seq_len:i+seq_len+pred_len].flatten())
+            y.append(data[i + seq_len:i + seq_len + pred_len].flatten())
         else:
-            y.append(data[i+seq_len:i+seq_len+pred_len, -1])
-    
+            y.append(data[i + seq_len:i + seq_len + pred_len, -1])
+
     return np.array(X), np.array(y)
 
 
 def train_and_evaluate_model(model, model_name, X_train, y_train, X_val, y_val, X_test, y_test, 
                               pred_len, n_features, features='M'):
     """Train and evaluate a single model."""
-    print(f"\n{'='*60}")
-    print(f"Training {model_name}...")
-    print(f"{'='*60}")
+    _print(f"\n{'='*60}")
+    _print(f"Training {model_name} ...")
+    _print(f"  (y has {y_train.shape[1]} output dimensions — each is fitted separately; this can take long on CPU)")
+    _print(f"{'='*60}")
     
     start_time = time.time()
     
     if y_train.ndim > 1 and y_train.shape[1] > 1:
         if not isinstance(model, MultiOutputRegressor):
-            model = MultiOutputRegressor(model)
-    
-    model.fit(X_train, y_train)
+            model = fit_multioutput_with_progress(
+                model, X_train, y_train, model_name, use_tqdm=(tqdm is not None)
+            )
+        else:
+            model.fit(X_train, y_train)
+    else:
+        model.fit(X_train, y_train)
+
     train_time = time.time() - start_time
-    print(f"Training completed in {train_time:.2f} seconds")
+    _print(f"Training completed in {train_time:.2f}s")
     
+    _print(f"Running inference on test set (n={X_test.shape[0]}) ...")
     start_time = time.time()
     y_pred_test = model.predict(X_test)
     pred_time = time.time() - start_time
+    _print(f"Inference done in {pred_time:.2f}s")
     
     if features == 'M':
         y_pred_test = y_pred_test.reshape(-1, pred_len, n_features)
@@ -153,16 +233,16 @@ def train_and_evaluate_model(model, model_name, X_train, y_train, X_val, y_val, 
     
     mae, mse, rmse, mape, mspe, rse, corr, r2 = metric(y_pred_test, y_test_reshaped)
     
-    print(f"\nTest Results for {model_name}:")
-    print(f"  MSE:  {mse:.6f}")
-    print(f"  MAE:  {mae:.6f}")
-    print(f"  R²:   {r2:.6f}")
-    print(f"  RMSE: {rmse:.6f}")
-    print(f"  MAPE: {mape:.6f}")
-    print(f"  MSPE: {mspe:.6f}")
-    print(f"  RSE:  {rse:.6f}")
-    print(f"  CORR: {corr:.6f}")
-    print(f"  Prediction time: {pred_time:.4f} seconds")
+    _print(f"\nTest Results for {model_name}:")
+    _print(f"  MSE:  {mse:.6f}")
+    _print(f"  MAE:  {mae:.6f}")
+    _print(f"  R²:   {r2:.6f}")
+    _print(f"  RMSE: {rmse:.6f}")
+    _print(f"  MAPE: {mape:.6f}")
+    _print(f"  MSPE: {mspe:.6f}")
+    _print(f"  RSE:  {rse:.6f}")
+    _print(f"  CORR: {corr:.6f}")
+    _print(f"  Prediction time: {pred_time:.4f}s")
     
     return {
         'model': model_name,
@@ -182,51 +262,62 @@ def train_and_evaluate_model(model, model_name, X_train, y_train, X_val, y_val, 
 def get_models(args):
     """Get dictionary of models to evaluate."""
     models = {}
-    
+    gpu = getattr(args, "use_ml_gpu", False)
+
     models['GradientBoosting'] = GradientBoostingRegressor(
         n_estimators=100,
         max_depth=5,
         learning_rate=0.1,
         random_state=args.random_seed,
-        verbose=0
+        verbose=0,
     )
-    
+
     if HAS_XGBOOST:
-        models['XGBoost'] = xgb.XGBRegressor(
+        xgb_kw = dict(
             n_estimators=100,
             max_depth=5,
             learning_rate=0.1,
             random_state=args.random_seed,
             verbosity=0,
-            n_jobs=-1
+            n_jobs=-1,
         )
-    
+        if gpu:
+            xgb_kw["tree_method"] = "gpu_hist"
+            xgb_kw["predictor"] = "gpu_predictor"
+        else:
+            xgb_kw["tree_method"] = "hist"
+        models['XGBoost'] = xgb.XGBRegressor(**xgb_kw)
+
     models['KNN'] = KNeighborsRegressor(
         n_neighbors=5,
         weights='distance',
-        n_jobs=-1
+        n_jobs=-1,
     )
-    
+
     if HAS_LIGHTGBM:
-        models['LightGBM'] = lgb.LGBMRegressor(
+        lgb_kw = dict(
             n_estimators=100,
             max_depth=5,
             learning_rate=0.1,
             random_state=args.random_seed,
             verbose=-1,
-            n_jobs=-1
+            n_jobs=-1,
         )
-    
+        lgb_kw["device"] = "gpu" if gpu else "cpu"
+        models['LightGBM'] = lgb.LGBMRegressor(**lgb_kw)
+
     if HAS_CATBOOST:
-        models['CatBoost'] = CatBoostRegressor(
+        cb_kw = dict(
             iterations=100,
             depth=5,
             learning_rate=0.1,
             random_seed=args.random_seed,
             verbose=0,
-            thread_count=-1
+            thread_count=-1,
         )
-    
+        cb_kw["task_type"] = "GPU" if gpu else "CPU"
+        models['CatBoost'] = CatBoostRegressor(**cb_kw)
+
     return models
 
 
@@ -244,43 +335,57 @@ def main():
                         help='model name: GradientBoosting, XGBoost, KNN, LightGBM, CatBoost, or all')
     parser.add_argument('--log_path', type=str, default='./logs', help='path to save logs')
     parser.add_argument('--dataset', type=str, default='sl_piliyandala', help='dataset name for logging')
-    
+    parser.add_argument(
+        '--use_ml_gpu',
+        action='store_true',
+        help='Use GPU for XGBoost/LightGBM/CatBoost if available (GradientBoosting/KNN stay CPU)',
+    )
+
     args = parser.parse_args()
-    
+
     np.random.seed(args.random_seed)
-    
+
     os.makedirs(args.log_path, exist_ok=True)
-    
-    print(f"\n{'='*60}")
-    print("ML Baseline Models Evaluation")
-    print(f"{'='*60}")
-    print(f"Dataset: {args.root_path}")
-    print(f"Sequence Length: {args.seq_len}")
-    print(f"Prediction Length: {args.pred_len}")
-    print(f"Features: {args.features}")
-    print(f"Target: {args.target}")
-    print(f"{'='*60}\n")
-    
-    print("Loading data...")
+
+    print_runtime_environment(use_ml_gpu=args.use_ml_gpu)
+
+    _print(f"\n{'='*60}")
+    _print("ML Baseline Models Evaluation")
+    _print(f"{'='*60}")
+    _print(f"Dataset: {args.root_path}")
+    _print(f"Sequence Length: {args.seq_len}")
+    _print(f"Prediction Length: {args.pred_len}")
+    _print(f"Features: {args.features}")
+    _print(f"Target: {args.target}")
+    _print(f"Started at: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    _print(f"{'='*60}\n")
+
+    t0 = time.time()
+    _print("[1/4] Loading CSVs ...")
     train_data, val_data, test_data, scaler, n_features = load_data(
         args.root_path, 
         target=args.target
     )
-    print(f"Train samples: {len(train_data)}")
-    print(f"Val samples: {len(val_data)}")
-    print(f"Test samples: {len(test_data)}")
-    print(f"Number of features: {n_features}")
-    
-    print("\nCreating sequences...")
-    X_train, y_train = create_sequences(train_data, args.seq_len, args.pred_len, args.features)
-    X_val, y_val = create_sequences(val_data, args.seq_len, args.pred_len, args.features)
-    X_test, y_test = create_sequences(test_data, args.seq_len, args.pred_len, args.features)
-    
-    print(f"Training sequences: {X_train.shape[0]}")
-    print(f"Validation sequences: {X_val.shape[0]}")
-    print(f"Test sequences: {X_test.shape[0]}")
-    print(f"Input features per sample: {X_train.shape[1]}")
-    print(f"Output features per sample: {y_train.shape[1]}")
+    _print(f"  Train rows: {len(train_data)} | Val: {len(val_data)} | Test: {len(test_data)} | n_features: {n_features}")
+    _print(f"  Loaded in {time.time() - t0:.1f}s\n")
+
+    _print("[2/4] Building sliding windows (this can take ~1–3 min on large CSVs) ...")
+    t1 = time.time()
+    X_train, y_train = create_sequences(
+        train_data, args.seq_len, args.pred_len, args.features, desc="train windows"
+    )
+    X_val, y_val = create_sequences(
+        val_data, args.seq_len, args.pred_len, args.features, desc="val windows"
+    )
+    X_test, y_test = create_sequences(
+        test_data, args.seq_len, args.pred_len, args.features, desc="test windows"
+    )
+    _print(f"  Windows built in {time.time() - t1:.1f}s")
+    _print(f"  Train windows: {X_train.shape[0]} | Val: {X_val.shape[0]} | Test: {X_test.shape[0]}")
+    _print(f"  X dim: {X_train.shape[1]} | y dim (outputs): {y_train.shape[1]}")
+    _print(f"  Note: each baseline fits one sub-model per output dim — expect long CPU time without GPU.\n")
+
+    _print("[3/4] Training models (see per-model progress below) ...")
     
     all_models = get_models(args)
     
@@ -288,15 +393,17 @@ def main():
         if args.model in all_models:
             models = {args.model: all_models[args.model]}
         else:
-            print(f"Model {args.model} not found. Available: {list(all_models.keys())}")
+            _print(f"Model {args.model} not found. Available: {list(all_models.keys())}")
             return
     else:
         models = all_models
-    
+
+    n_models = len(models)
     results = []
-    
-    for model_name, model in models.items():
+
+    for mi, (model_name, model) in enumerate(models.items(), start=1):
         try:
+            _print(f"\n>>> [{mi}/{n_models}] Starting: {model_name} @ {time.strftime('%H:%M:%S')}")
             result = train_and_evaluate_model(
                 model, model_name,
                 X_train, y_train,
@@ -327,17 +434,18 @@ def main():
                 f.write(f"Pred Time: {result['pred_time']}\n")
             
         except Exception as e:
-            print(f"Error training {model_name}: {str(e)}")
+            _print(f"Error training {model_name}: {str(e)}")
             import traceback
             traceback.print_exc()
-    
-    print(f"\n{'='*80}")
-    print("Summary of Results")
-    print(f"{'='*80}")
-    print(f"{'Model':<20} {'MSE':>12} {'MAE':>12} {'R²':>12} {'RMSE':>12}")
-    print("-" * 80)
+
+    _print(f"\n[4/4] Summary @ {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    _print(f"\n{'='*80}")
+    _print("Summary of Results")
+    _print(f"{'='*80}")
+    _print(f"{'Model':<20} {'MSE':>12} {'MAE':>12} {'R²':>12} {'RMSE':>12}")
+    _print("-" * 80)
     for r in results:
-        print(f"{r['model']:<20} {r['mse']:>12.6f} {r['mae']:>12.6f} {r['r2']:>12.6f} {r['rmse']:>12.6f}")
+        _print(f"{r['model']:<20} {r['mse']:>12.6f} {r['mae']:>12.6f} {r['r2']:>12.6f} {r['rmse']:>12.6f}")
     
     with open("ml_baseline_results.txt", 'a') as f:
         f.write(f"\n{'='*80}\n")
@@ -350,7 +458,7 @@ def main():
     with open(results_file, 'w') as f:
         json.dump(results, f, indent=2)
     
-    print(f"\nResults saved to {results_file}")
+    _print(f"\nDone. Results saved to {results_file}")
 
 
 if __name__ == '__main__':

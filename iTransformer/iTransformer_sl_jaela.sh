@@ -34,6 +34,6 @@ do
     --d_ff 512\
     --itr 1 \
     --train_epochs 100\
-    --patience 5\
+    --patience 4\
     --checkpoints $checkpoints > $path/logs/$model_name'_'$model_id_name'_'$seq_len'_'$pred_len.log
 done

@@ -1,5 +1,7 @@
 # ML Baseline Models for sl_piliyandala dataset
 # Models: Gradient Boosting, XGBoost, KNN, LightGBM, CatBoost
+# Default: CPU (sklearn/XGB/LGBM/Cat). Add --use_ml_gpu for GPU tree libs if installed.
+# Watch live: tail -f ./drive/MyDrive/msc-val/logs/ML_baselines_sl_piliyandala_96_96.log
 
 path=./drive/MyDrive/msc-val
 if [ ! -d "$path/logs" ]; then
@@ -23,7 +25,8 @@ do
         --features M \
         --model all \
         --log_path $path/logs \
-        --dataset $dataset > $path/logs/ML_baselines_$dataset'_'$seq_len'_'$pred_len.log
+        --dataset $dataset \
+        > $path/logs/ML_baselines_$dataset'_'$seq_len'_'$pred_len.log
 done
 
 echo "All ML baseline evaluations completed!"
