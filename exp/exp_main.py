@@ -143,12 +143,17 @@ class Exp_Main(Exp_Basic):
                                             epochs = self.args.train_epochs,
                                             max_lr = self.args.learning_rate)
 
+        # Log often enough that short epochs (<100 batches) still show progress in log files
+        log_every = 100 if train_steps >= 200 else max(1, train_steps // 10)
+
         for epoch in range(self.args.train_epochs):
             iter_count = 0
             train_loss = []
 
             self.model.train()
             epoch_time = time.time()
+            print('Epoch [{}/{}] training start | batches/epoch: {} | log every {} batches'.format(
+                epoch + 1, self.args.train_epochs, train_steps, log_every), flush=True)
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
                 iter_count += 1
                 model_optim.zero_grad()
@@ -195,11 +200,12 @@ class Exp_Main(Exp_Basic):
                     loss = criterion(outputs, batch_y)
                     train_loss.append(loss.item())
 
-                if (i + 1) % 100 == 0:
-                    print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
+                if (i + 1) % log_every == 0 or (i + 1) == train_steps:
+                    print("\titers: {0}/{1}, epoch: {2}/{3} | loss: {4:.7f}".format(
+                        i + 1, train_steps, epoch + 1, self.args.train_epochs, loss.item()), flush=True)
                     speed = (time.time() - time_now) / iter_count
-                    left_time = speed * ((self.args.train_epochs - epoch) * train_steps - i)
-                    print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
+                    left_time = speed * ((self.args.train_epochs - epoch - 1) * train_steps + (train_steps - i - 1))
+                    print('\tspeed: {:.4f}s/iter; est. left: {:.4f}s'.format(speed, left_time), flush=True)
                     iter_count = 0
                     time_now = time.time()
 
@@ -215,22 +221,24 @@ class Exp_Main(Exp_Basic):
                     adjust_learning_rate(model_optim, scheduler, epoch + 1, self.args, printout=False)
                     scheduler.step()
 
-            print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
+            print("Epoch [{}/{}] train phase done | wall time: {:.1f}s".format(
+                epoch + 1, self.args.train_epochs, time.time() - epoch_time), flush=True)
             train_loss = np.average(train_loss)
+            print("Epoch [{}/{}] validation...".format(epoch + 1, self.args.train_epochs), flush=True)
             vali_loss = self.vali(vali_data, vali_loader, criterion)
             test_loss = self.vali(test_data, test_loader, criterion)
 
-            print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
-                epoch + 1, train_steps, train_loss, vali_loss, test_loss))
+            print("Epoch [{}/{}] done | Train: {:.7f} | Vali: {:.7f} | Test: {:.7f}".format(
+                epoch + 1, self.args.train_epochs, train_loss, vali_loss, test_loss), flush=True)
             early_stopping(vali_loss, self.model, path)
             if early_stopping.early_stop:
-                print("Early stopping")
+                print("Early stopping", flush=True)
                 break
 
             if self.args.lradj != 'TST':
                 adjust_learning_rate(model_optim, scheduler, epoch + 1, self.args)
             else:
-                print('Updating learning rate to {}'.format(scheduler.get_last_lr()[0]))
+                print('Updating learning rate to {}'.format(scheduler.get_last_lr()[0]), flush=True)
 
         best_model_path = path + '/' + 'checkpoint.pth'
         self.model.load_state_dict(torch.load(best_model_path))
